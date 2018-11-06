@@ -2,10 +2,12 @@ import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.Response;
 
 import static org.asynchttpclient.Dsl.asyncHttpClient;
+import static org.asynchttpclient.Dsl.config;
 
 public class NingAsyncHttpClient {
     public static void main(String[] args) throws Exception {
-        try (AsyncHttpClient asyncHttpClient = asyncHttpClient()) {
+        var config = config().setIoThreadsCount(2);
+        try (AsyncHttpClient asyncHttpClient = asyncHttpClient(config)) {
             asyncHttpClient
                     .prepareGet("http://httpbin.org/delay/1")
                     .execute()
