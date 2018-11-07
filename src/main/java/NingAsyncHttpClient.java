@@ -2,54 +2,41 @@ import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.Response;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiPredicate;
 import java.util.function.Supplier;
 
+import static ch.qos.logback.core.util.CloseUtil.closeQuietly;
 import static org.asynchttpclient.Dsl.asyncHttpClient;
 import static org.asynchttpclient.Dsl.config;
 
 public class NingAsyncHttpClient {
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         var config = config();
-        try (AsyncHttpClient client = asyncHttpClient(config)) {
-//            String result = asyncHttpClient
-//                    .prepareGet("http://httpbin.org/delay/1")
-//                    .execute()
-//                    .toCompletableFuture()
-//                    .thenApplyAsync(AsyncHttpClient::transformResponse)
-//                    .exceptionally(error ->  "eerrroor")
-//                    .handle()
-//                    .whenComplete((body, error) -> {
-//                        if (error == null) {
-//                            System.out.println(body);
-//                        } else {
-//                            System.out.println("Error: " + error.getMessage());
-//                        }
-//                    })
-//                    .handle((body, error) -> {
-//                        if (error != null) {
-//                            return "hanlde error: " + error.getMessage();
-//                        }
-//                        return body;
-//                    })
-////                    .completeOnTimeout("Tiiiimedout", 1, TimeUnit.MILLISECONDS)
-////                    .orTimeout(1, TimeUnit.MICROSECONDS)
-//                    .exceptionally(error -> "eerrroor: " + error.getMessage())
-            String result = retry(() -> fetch(client), 3).join();
-            System.out.println("Result: " + result);
+        AsyncHttpClient client = asyncHttpClient(config);
+
+        Supplier<CompletableFuture<String>> withRetry = () -> retry(() -> fetch(client, () -> "http://httpbn.org/delay/1"), 3);
+
+        circuitBreaker(withRetry, (result, error) -> true)
+                .whenComplete((result, error) -> {
+                    System.out.println("Result: " + result + ", Error: " + error.getMessage());
+                    closeQuietly(client);
+                });
+    }
+
+    private static CompletableFuture<String> fetch(AsyncHttpClient client, Supplier<String> urlSupplier) {
+        try {
+            return client
+                    .prepareGet(urlSupplier.get())
+                    .execute()
+                    .toCompletableFuture()
+                    .thenApplyAsync(NingAsyncHttpClient::transformResponse);
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(e);
         }
     }
 
     private static String transformResponse(Response response) {
-//        throw new RuntimeException("oh");
         return response.getResponseBody();
-    }
-
-    private static CompletableFuture<String> fetch(AsyncHttpClient client) {
-        return client
-                .prepareGet("http://httpbin.org/delay/1")
-                .execute()
-                .toCompletableFuture()
-                .thenApplyAsync(NingAsyncHttpClient::transformResponse);
     }
 
     private static <T> CompletableFuture<T> retry(Supplier<CompletableFuture<T>> action, int attempts) {
@@ -60,18 +47,37 @@ public class NingAsyncHttpClient {
 
     private static <T> void retry(Supplier<CompletableFuture<T>> action, int attempts, CompletableFuture<T> promise) {
         action.get().whenComplete((result, error) -> {
-           if (error != null) {
-               if (attempts > 0) {
-                   System.out.println("Failed with error: " + error.getMessage());
-                   retry(action, attempts - 1, promise);
-               } else {
-                   promise.completeExceptionally(error);
-               }
-           } else {
-               promise.complete(result);
-           }
+            if (error != null) {
+                if (attempts > 0) {
+                    System.out.println("Retry: Failed with error: " + error.getMessage() + ", will try " + attempts + " more time(s).");
+                    retry(action, attempts - 1, promise);
+                } else {
+                    System.out.println("Retry: Giving up");
+                    promise.completeExceptionally(error);
+                }
+            } else {
+                promise.complete(result);
+            }
         });
     }
 
+    private static <T> CompletableFuture<T> circuitBreaker(Supplier<CompletableFuture<T>> action,
+                                                           BiPredicate<T, Throwable> isTrigger) {
+        // if open return early
+        // ...
+
+        // otherwise run
+        return action.get().whenComplete((result, error) -> {
+            if (isTrigger.test(result, error)) {
+                System.out.println("CircuitBreak: Caught faulty request");
+                // handle opening
+                // ..
+            } else {
+                // should open half open CB
+            }
+
+            // otherwise we are fine
+        });
+    }
 
 }
