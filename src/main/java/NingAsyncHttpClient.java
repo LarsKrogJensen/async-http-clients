@@ -14,9 +14,11 @@ public class NingAsyncHttpClient {
         var config = config();
         AsyncHttpClient client = asyncHttpClient(config);
 
-        Supplier<CompletableFuture<String>> withRetry = () -> retry(() -> fetch(client, () -> "http://httpbn.org/delay/1"), 3);
+        Supplier<String> serviceDisco = () -> "http://httpbn.org/delay/1";
+        Supplier<CompletableFuture<String>> withRetry = () -> retry(() -> fetch(client, serviceDisco), 3);
+        BiPredicate<String, Throwable> evalResult = (result, error) -> true;
 
-        circuitBreaker(withRetry, (result, error) -> true)
+        circuitBreaker(withRetry, evalResult)
                 .whenComplete((result, error) -> {
                     System.out.println("Result: " + result + ", Error: " + error.getMessage());
                     closeQuietly(client);
