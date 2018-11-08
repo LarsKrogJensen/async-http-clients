@@ -6,7 +6,7 @@ import org.asynchttpclient.Response;
 
 import java.util.Optional;
 
-import static clients.KazbiHttpClient.kazbiClient;
+import static clients.KazbiAsyncHttpClient.kazbiClient;
 import static org.asynchttpclient.Dsl.asyncHttpClient;
 import static org.asynchttpclient.Dsl.config;
 
@@ -20,7 +20,7 @@ public class NingAsyncHttpClient {
                 .withAsyncClient(asyncClient)
                 .withServiceLookup(() -> Optional.of("http://httpbin.org"))
                 .withCircuitBreakerFactory(baseUrl -> new CircuitBreakerImpl())
-                .withRetryAttempts(10)
+                .withRetryOptions(10)
                 .withRetryDelayMs(1_000)
                 .build();
 

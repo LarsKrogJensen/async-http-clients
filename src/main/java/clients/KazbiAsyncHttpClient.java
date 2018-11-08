@@ -8,31 +8,29 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static java.util.Objects.requireNonNull;
+import static java.util.concurrent.CompletableFuture.failedFuture;
 
-public class KazbiHttpClient {
+public class KazbiAsyncHttpClient {
     private final AsyncHttpClient client;
-    private final int retryAttempts;
-    private final long retryDelayMs;
+    private final RetryOptions retryOptions;
     private final Function<String, RequestBuilder> requestFactory;
     private final Supplier<Optional<String>> serviceLookup;
     private final Function<String, CircuitBreaker> circuitBreakerFactory;
 
-    public KazbiHttpClient(AsyncHttpClient client,
-                           int retryAttempts,
-                           long retryDelayMs,
-                           Function<String, RequestBuilder> requestFactory,
-                           Supplier<Optional<String>> serviceLookup,
-                           Function<String, CircuitBreaker> circuitBreakerFactory) {
+    public KazbiAsyncHttpClient(AsyncHttpClient client,
+                                RetryOptions retryOptions,
+                                Function<String, RequestBuilder> requestFactory,
+                                Supplier<Optional<String>> serviceLookup,
+                                Function<String, CircuitBreaker> circuitBreakerFactory) {
         this.client = requireNonNull(client, "Client null");
-        this.retryAttempts = retryAttempts;
-        this.retryDelayMs = retryDelayMs;
+        this.retryOptions = requireNonNull(retryOptions, "Retry options null");
         this.requestFactory = requireNonNull(requestFactory, "Request factort null");
         this.serviceLookup = requireNonNull(serviceLookup, "Service lookup null");
         this.circuitBreakerFactory = requireNonNull(circuitBreakerFactory, "Circuit breaker null");
     }
 
     public CompletableFuture<Response> execute() {
-        AsyncRetry retry = new AsyncRetry(retryAttempts, retryDelayMs);
+        AsyncRetry retry = new AsyncRetry(retryOptions);
         return retry.execute(this::run);
     }
 
@@ -40,12 +38,12 @@ public class KazbiHttpClient {
         return serviceLookup.get().map(baseUrl -> {
             RequestBuilder requestBuilder = requestFactory.apply(baseUrl);
             return circuitBreakerFactory.apply(baseUrl).executeAsync(() -> client.executeRequest(requestBuilder).toCompletableFuture());
-        }).orElseGet(() -> CompletableFuture.failedFuture(new RuntimeException("Service not available in lookup")));
+        }).orElseGet(() -> failedFuture(new RuntimeException("Service not available in lookup")));
     }
 
-    public static Builder kazbiClient(KazbiHttpClient kazbiHttpClient) {
+    public static Builder kazbiClient(KazbiAsyncHttpClient kazbiHttpClient) {
         return new Builder()
-                .withRetryAttempts(kazbiHttpClient.retryAttempts)
+                .withRetryOptions(kazbiHttpClient.retryOptions)
                 .withRequestFactory(kazbiHttpClient.requestFactory)
                 .withAsyncClient(kazbiHttpClient.client)
                 .withServiceLookup(kazbiHttpClient.serviceLookup)
@@ -58,20 +56,14 @@ public class KazbiHttpClient {
 
     public static class Builder {
         private AsyncHttpClient asyncClient;
-        private int retryAttempts = 3;
-        private long retryDelayMs = 1_000;
+        private RetryOptions retryOptions = new RetryOptions(3, 1_000);
         private Function<String, RequestBuilder> requestFactory = Dsl::get;
         private Supplier<Optional<String>> serviceLookup;
         private Function<String, CircuitBreaker> circuitBreakerFactory;
 
 
-        public Builder withRetryAttempts(int retryAttempts) {
-            this.retryAttempts = retryAttempts;
-            return this;
-        }
-
-        public Builder withRetryDelayMs(long retryDelayMs) {
-            this.retryDelayMs = retryDelayMs;
+        public Builder withRetryOptions(RetryOptions retryOptions) {
+            this.retryOptions = retryOptions;
             return this;
         }
 
@@ -95,11 +87,10 @@ public class KazbiHttpClient {
             return this;
         }
 
-        public KazbiHttpClient build() {
-            return new KazbiHttpClient(
+        public KazbiAsyncHttpClient build() {
+            return new KazbiAsyncHttpClient(
                     asyncClient,
-                    retryAttempts,
-                    retryDelayMs,
+                    retryOptions,
                     requestFactory,
                     serviceLookup,
                     circuitBreakerFactory);
