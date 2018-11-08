@@ -1,28 +1,55 @@
+package clients;
+
 import org.asynchttpclient.AsyncHttpClient;
+import org.asynchttpclient.Dsl;
 import org.asynchttpclient.Response;
 
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiPredicate;
 import java.util.function.Supplier;
 
-import static ch.qos.logback.core.util.CloseUtil.closeQuietly;
+import static clients.FailsafeClient.failSafeClient;
 import static org.asynchttpclient.Dsl.asyncHttpClient;
 import static org.asynchttpclient.Dsl.config;
 
 public class NingAsyncHttpClient {
     public static void main(String[] args) {
         var config = config();
-        AsyncHttpClient client = asyncHttpClient(config);
 
-        Supplier<String> serviceDisco = () -> "http://httpbn.org/delay/1";
-        Supplier<CompletableFuture<String>> withRetry = () -> retry(() -> fetch(client, serviceDisco), 3);
-        BiPredicate<String, Throwable> evalResult = (result, error) -> true;
+        // setup once
+        FailsafeClient client = failSafeClient()
+                .withClient(asyncHttpClient(config))
+                .withServiceLookup(() -> Optional.of("http://httpbin.org"))
+                .withCircuitBreakerFactory(url -> new CircuitBreakerImpl())
+                .withRetryAttempts(10)
+                .build();
 
-        circuitBreaker(withRetry, evalResult)
-                .whenComplete((result, error) -> {
-                    System.out.println("Result: " + result + ", Error: " + error.getMessage());
-                    closeQuietly(client);
-                });
+
+        // per request
+        failSafeClient(client)
+                .withRequestFactory(Dsl::get)
+                .execute();
+
+//
+//        Supplier<String> serviceDisco = () -> "http://httpbn.org/delay/1";
+//        Supplier<CompletableFuture<String>> withRetry = () -> retry(() -> fetch(client, serviceDisco), 3);
+//        Supplier<CompletableFuture<Response>> withBreaker = () ->
+//        BiPredicate<String, Throwable> evalResult = (result, error) -> true;
+//
+////        withRetry()
+//
+//
+//        circuitBreaker(withRetry, evalResult)
+//                .whenComplete((result, error) -> {
+//                    System.out.println("Result: " + result + ", Error: " + error.getMessage());
+//                    closeQuietly(client);
+//                });
+//
+//        CompletableFuture<Response> result =
+//                Blocks.retry(10,
+//                             () -> Blocks.lookup().thenCompose(url -> fetch(client, () -> url))
+//                );
     }
 
     private static CompletableFuture<String> fetch(AsyncHttpClient client, Supplier<String> urlSupplier) {
