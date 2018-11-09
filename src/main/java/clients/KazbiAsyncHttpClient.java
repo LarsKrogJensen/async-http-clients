@@ -30,18 +30,18 @@ public class KazbiAsyncHttpClient {
     }
 
     public CompletableFuture<Response> execute() {
-        AsyncRetry retry = new AsyncRetry(retryOptions);
-        return retry.execute(this::run);
+        final AsyncRetryer retryer = new AsyncRetryer(retryOptions);
+        return retryer.execute(() -> {
+            return serviceLookup.get().map(baseUrl -> {
+                Request request = requestFactory.apply(baseUrl).build();
+                retryer.currentUri(request.getUri());
+                return circuitBreakerFactory.apply(baseUrl).executeAsync(() -> client.executeRequest(request).toCompletableFuture());
+            }).orElseGet(() -> failedFuture(new RuntimeException("Service not available in lookup")));
+        });
     }
 
-    private CompletableFuture<Response> run() {
-        return serviceLookup.get().map(baseUrl -> {
-            RequestBuilder requestBuilder = requestFactory.apply(baseUrl);
-            return circuitBreakerFactory.apply(baseUrl).executeAsync(() -> client.executeRequest(requestBuilder).toCompletableFuture());
-        }).orElseGet(() -> failedFuture(new RuntimeException("Service not available in lookup")));
-    }
 
-    public static Builder kazbiClient(KazbiAsyncHttpClient kazbiHttpClient) {
+    public static Builder fromKazbiClient(KazbiAsyncHttpClient kazbiHttpClient) {
         return new Builder()
                 .withRetryOptions(kazbiHttpClient.retryOptions)
                 .withRequestFactory(kazbiHttpClient.requestFactory)
@@ -50,7 +50,7 @@ public class KazbiAsyncHttpClient {
                 .withCircuitBreakerFactory(kazbiHttpClient.circuitBreakerFactory);
     }
 
-    public static Builder kazbiClient() {
+    public static Builder newKazbiClient() {
         return new Builder();
     }
 

@@ -6,7 +6,8 @@ import org.asynchttpclient.Response;
 
 import java.util.Optional;
 
-import static clients.KazbiAsyncHttpClient.kazbiClient;
+import static clients.KazbiAsyncHttpClient.fromKazbiClient;
+import static clients.KazbiAsyncHttpClient.newKazbiClient;
 import static org.asynchttpclient.Dsl.asyncHttpClient;
 import static org.asynchttpclient.Dsl.config;
 
@@ -16,17 +17,16 @@ public class NingAsyncHttpClient {
 
         // setup once
         AsyncHttpClient asyncClient = asyncHttpClient(config);
-        var template = kazbiClient()
+        var template = newKazbiClient()
                 .withAsyncClient(asyncClient)
-                .withServiceLookup(() -> Optional.of("http://httpbin.org"))
+                .withRetryOptions(new RetryOptions(10, 1_000))
+                .withServiceLookup(() -> Optional.of("http://httpbinm.org"))
                 .withCircuitBreakerFactory(baseUrl -> new CircuitBreakerImpl())
-                .withRetryOptions(10)
-                .withRetryDelayMs(1_000)
                 .build();
 
         // Per request
-        kazbiClient(template)
-                .withRequestFactory(baseUrl -> Dsl.get(baseUrl + "/delay/1").setReadTimeout(500))
+        fromKazbiClient(template)
+                .withRequestFactory(baseUrl -> Dsl.get(baseUrl + "/delay/1").setReadTimeout(5_000))
                 .execute()
                 .thenApply(Response::getResponseBody)
                 .whenComplete((result, error) -> {
