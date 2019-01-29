@@ -43,5 +43,10 @@
             <artifactId>httpasyncclient</artifactId>
             <version>4.1.4</version>
         </dependency>
+        <dependency>
+            <groupId>com.spotify</groupId>
+            <artifactId>completable-futures</artifactId>
+            <version>0.3.1</version>
+        </dependency>
     </dependencies>
 </project>
